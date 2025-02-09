@@ -3,7 +3,11 @@ const fs = require('fs');
 const path = require('path');
 const qrcode = require('qrcode-terminal');
 
-const client = new Client();
+const client = new Client({
+    puppeteer: {
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    }
+});
 
 // Generar el QR para conectarse
 client.on('qr', (qr) => {
