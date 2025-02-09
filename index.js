@@ -1,42 +1,32 @@
-const { Client, MessageMedia } = require('whatsapp-web.js');
-const fs = require('fs');
-const path = require('path');
-const qrcode = require('qrcode-terminal');
+const { Client, LocalAuth } = require("whatsapp-web.js");
+const qrcode = require("qrcode-terminal");
 
-const client = new Client();
+const client = new Client({
+    authStrategy: new LocalAuth(),
+});
 
-// Generar el QR para conectarse
-client.on('qr', (qr) => {
+client.on("qr", (qr) => {
     qrcode.generate(qr, { small: true });
-    console.log('Escanea este QR para conectar el bot.');
 });
 
-// Cuando el cliente esté listo
-client.on('ready', () => {
-    console.log('¡Bot listo y conectado a WhatsApp!');
+client.on("ready", () => {
+    console.log("Bot conectado y listo para usar!");
 });
 
-// Detecta mensajes entrantes
-client.on('message', async (message) => {
-    if (message.hasMedia) {
+client.on("message", async (message) => {
+    if (message.hasMedia && message.body.toLowerCase() === "sticker") {
         const media = await message.downloadMedia();
-        
-        if (message.body.toLowerCase().includes('sticker')) { // Si el mensaje contiene la palabra 'sticker'
-            const image = media.data;
-            const imagePath = path.join(__dirname, 'sticker.jpg');
-
-            // Guardar la imagen recibida
-            fs.writeFileSync(imagePath, image, 'base64');
-
-            // Crear el sticker
-            const sticker = MessageMedia.fromFilePath(imagePath);
-            await message.reply(sticker, undefined, { sendMediaAsSticker: true });
-
-            // Eliminar la imagen después de convertirla en sticker
-            fs.unlinkSync(imagePath);
-        }
+        client.sendMessage(message.from, media, { sendMediaAsSticker: true });
     }
 });
 
-// Iniciar la conexión
 client.initialize();
+
+// 🔹 Servidor Express para mantener Replit activo
+const express = require("express");
+const app = express();
+
+app.get("/", (req, res) => res.send("Bot activo 🚀"));
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Servidor activo en el puerto ${PORT}`));
