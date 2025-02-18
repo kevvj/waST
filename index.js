@@ -18,16 +18,8 @@ const ffprobe = require('ffprobe');
 const ffprobeStatic = require('ffprobe-static');
 const puppeteer = require('puppeteer');
 
-puppeteer.launch().then(browser => {
-  console.log('Chromium descargado correctamente');
-  return browser.close();
-}).catch(error => {
-  console.error('Error al descargar Chromium:', error);
-});
-
 const client = new Client({
     puppeteer: {
-        executablePath: '/usr/bin/chromium-browser',
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     }
 });
