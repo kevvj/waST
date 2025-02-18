@@ -13,7 +13,7 @@
     "whatsapp-web.js": "^1.14.1",
     "qrcode-terminal": "^0.12.0",
     "ffprobe": "^1.1.2",
-    "ffprobe-static": "^4.2.1",
+    "ffprobe-static": "^3.1.0",
     "puppeteer-core": "^10.4.0"
   },
   "engines": {
