@@ -33,7 +33,3 @@ bower_components/
 # Heroku
 /.apt/
 .vercel
-
-# Ignore Puppeteer Chromium binaries
-node_modules/puppeteer/.local-chromium/
-node_modules/whatsapp-web.js/node_modules/puppeteer-core/.local-chromium/
