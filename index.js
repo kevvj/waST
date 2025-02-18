@@ -2,33 +2,13 @@ const { Client, MessageMedia } = require('whatsapp-web.js');
 const fs = require('fs');
 const path = require('path');
 const qrcode = require('qrcode-terminal');
-const { exec } = require('child_process');
-
-// Verificar la ubicación del ejecutable de chromium
-exec('which chromium-browser || which chromium', (error, stdout, stderr) => {
-  if (error) {
-    console.error(`Error al encontrar chromium: ${error}`);
-    console.error(`stderr: ${stderr}`);
-    return;
-  }
-  console.log(`Ubicación de chromium: ${stdout}`);
-});
-
+const puppeteer = require('puppeteer');
 const ffprobe = require('ffprobe');
 const ffprobeStatic = require('ffprobe-static');
-const puppeteer = require('puppeteer-core');
-
-(async () => {
-  const browser = await puppeteer.launch({
-    executablePath: '/usr/bin/chromium-browser',
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-  });
-  // ... tu código existente ...
-})();
+const { exec } = require('child_process');
 
 const client = new Client({
     puppeteer: {
-        executablePath: '/usr/bin/chromium-browser',
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     }
 });
