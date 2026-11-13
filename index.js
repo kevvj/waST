@@ -1,175 +1,77 @@
-const { Client, MessageMedia } = require('whatsapp-web.js')
-const fs = require('fs')
-const path = require('path')
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js')
 const qrcode = require('qrcode-terminal')
-const { exec } = require('child_process')
-const ffprobe = require('ffprobe')
-const ffprobeStatic = require('ffprobe-static')
+const { parseCommand, HELP } = require('./src/commands')
+const { imageToSticker, videoToSticker } = require('./src/stickers')
 
-const client = new Client()
+const STICKER_META = { stickerAuthor: 'waST', stickerName: 'waST bot' }
+
+// LocalAuth guarda la sesión en .wwebjs_auth: solo hay que escanear el QR la primera vez.
+const client = new Client({
+  authStrategy: new LocalAuth(),
+  puppeteer: { args: ['--no-sandbox'] },
+})
 
 client.on('qr', (qr) => {
-    qrcode.generate(qr, { small: true })
-    console.log('Escanea este QR para conectar el bot.')
+  qrcode.generate(qr, { small: true })
+  console.log('Escanea este QR con WhatsApp para conectar el bot.')
 })
 
-client.on('ready', () => {
-    console.log('¡Bot listo y conectado a WhatsApp!')
-})
+client.on('ready', () => console.log('Bot listo y conectado a WhatsApp.'))
+client.on('disconnected', (reason) => console.log('Desconectado:', reason))
+
+const isVideo = (mime) => mime.startsWith('video/') || mime === 'image/gif'
+const isImage = (mime) => mime.startsWith('image/')
+
+// Busca el archivo: el del propio mensaje o el del mensaje al que responde.
+async function getMediaMessage(message) {
+  if (message.hasMedia) return message
+  if (message.hasQuotedMsg) {
+    const quoted = await message.getQuotedMessage()
+    if (quoted.hasMedia) return quoted
+  }
+  return null
+}
 
 client.on('message', async (message) => {
-    if (message.hasMedia) {
-        const media = await message.downloadMedia()
+  const command = parseCommand(message.body)
 
-        if (media.mimetype.startsWith('video/mp4')) {
-            try {
-                console.log('📹 Video recibido. Guardando archivo...')
+  if (command?.action === 'help') return message.reply(HELP)
 
-                const videoPath = path.join(__dirname, 'temp_video.mp4')
-                fs.writeFileSync(videoPath, Buffer.from(media.data, 'base64'))
+  const mediaMsg = await getMediaMessage(message)
+  if (!mediaMsg) {
+    if (command) await message.reply('Envía o responde a una imagen o video con ese comando. Escribe *!ayuda* para ver los comandos.')
+    return
+  }
 
-                const stickerPath = path.join(__dirname, 'temp_sticker.webp')
+  const media = await mediaMsg.downloadMedia()
+  if (!media) return message.reply('No pude descargar el archivo. Intenta enviarlo de nuevo.')
 
-                ffprobe(videoPath, { path: ffprobeStatic.path }, async (err, info) => {
-                    if (err) {
-                        console.error("❌ Error al obtener información del video:", err)
-                        return message.reply("❌ Hubo un problema al analizar el video.")
-                    }
+  const mime = media.mimetype || ''
+  // Como en la versión anterior: los videos se convierten siempre; las imágenes solo con un comando.
+  const options = command ?? (isVideo(mime) ? { action: 'sticker', removeBg: false, text: '' } : null)
+  if (!options) return
 
-                    const { width, height } = info.streams[0]
-                    console.log(`📏 Dimensiones del video: ${width}x${height}`)
-
-                    const convertToSticker = (quality, callback) => {
-                        exec(`ffmpeg -y -i "${videoPath}" -vcodec libwebp -vf "scale=512:512:force_original_aspect_ratio=decrease, pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0, format=rgba" -loop 0 -an -q:v ${quality} "${stickerPath}"`, (error, stdout, stderr) => {
-                            
-                            callback(error, stdout, stderr)
-                        })
-                    }
-
-                    const reduceStickerSize = async (quality) => {
-                        convertToSticker(quality, async (error, stdout, stderr) => {
-                            if (error) {
-                                console.error(`❌ Error en FFmpeg: ${stderr}`)
-                                return message.reply("❌ Hubo un problema al convertir el video.")
-                            }
-
-                            const stickerSize = fs.statSync(stickerPath).size
-                            console.log(`📏 Tamaño del sticker después de reducir la calidad a ${quality}:`, stickerSize)
-
-                            if (stickerSize <= 1000000) {
-                                const sticker = MessageMedia.fromFilePath(stickerPath)
-                                await message.reply(sticker, undefined, { sendMediaAsSticker: true })
-                                console.log('✅ Sticker enviado exitosamente')
-                                fs.unlinkSync(videoPath)
-                                fs.unlinkSync(stickerPath)
-                            } else if (quality > 10) {
-                                console.log('🔧 Intentando reducir la calidad aún más...')
-                                reduceStickerSize(quality - 5)
-                            } else {
-                                console.error("❌ El sticker sigue siendo demasiado grande.")
-                                return message.reply("❌ El tamaño del sticker es demasiado grande incluso después de intentar reducir la calidad.")
-                            }
-                        })
-                    }
-
-                    if (width > 512 || height > 512) {
-                        console.log('🔧 Ajustando dimensiones del video...')
-                        convertToSticker(75, async (error, stdout, stderr) => {
-                            if (error) {
-                                console.error(`❌ Error en FFmpeg: ${stderr}`)
-                                return message.reply("❌ Hubo un problema al convertir el video.")
-                            }
-
-                            console.log('✅ Conversión completada. Verificando sticker...')
-
-                            if (fs.existsSync(stickerPath) && fs.statSync(stickerPath).size > 0) {
-                                const stickerSize = fs.statSync(stickerPath).size
-                                console.log('📏 Tamaño del sticker:', stickerSize)
-
-                                if (stickerSize > 1000000) {
-                                    console.log('🔧 El sticker es demasiado grande. Intentando reducir el tamaño...')
-                                    reduceStickerSize(70)
-                                } else {
-                                    const sticker = MessageMedia.fromFilePath(stickerPath)
-                                    await message.reply(sticker, undefined, { sendMediaAsSticker: true })
-                                    console.log('✅ Sticker enviado exitosamente')
-                                    
-                                    fs.unlinkSync(videoPath)
-                                    fs.unlinkSync(stickerPath)
-                                }
-                            } else {
-                                console.error("❌ El sticker no es válido.")
-                                return message.reply("❌ Hubo un problema con el sticker.")
-                            }
-                        })
-                    } else {
-                        console.log('🔧 Video dentro de las dimensiones correctas, procesando directamente...')
-                        convertToSticker(75, async (error, stdout, stderr) => {
-                            if (error) {
-                                console.error(`❌ Error en FFmpeg: ${stderr}`)
-                                return message.reply("❌ Hubo un problema al convertir el video.")
-                            }
-
-                            console.log('✅ Conversión completada. Verificando sticker...')
-
-                            if (fs.existsSync(stickerPath) && fs.statSync(stickerPath).size > 0) {
-                                const stickerSize = fs.statSync(stickerPath).size
-                                console.log('📏 Tamaño del sticker:', stickerSize)
-
-                                if (stickerSize > 1000000) {
-                                    console.log('🔧 El sticker es demasiado grande. Intentando reducir el tamaño...')
-                                    reduceStickerSize(70)
-                                } else {
-                                    const sticker = MessageMedia.fromFilePath(stickerPath)
-                                    await message.reply(sticker, undefined, { sendMediaAsSticker: true })
-                                    console.log('✅ Sticker enviado exitosamente')
-                                    fs.unlinkSync(videoPath)
-                                    fs.unlinkSync(stickerPath)
-                                }
-                            } else {
-                                console.error("❌ El sticker no es válido.")
-                                return message.reply("❌ Hubo un problema con el sticker.")
-                            }
-                        })
-                    }
-                })
-
-            } catch (err) {
-                console.error("❌ Error al manejar el archivo de video:", err)
-                if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath)
-                if (fs.existsSync(stickerPath)) fs.unlinkSync(stickerPath)
-            }
-        } else if (media.mimetype.startsWith('image/') && message.body.toLowerCase().includes('sticker')) {
-            try {
-                console.log('🖼️ Imagen recibida. Guardando archivo...')
-
-                const imagePath = path.join(__dirname, 'temp_image.png')
-                fs.writeFileSync(imagePath, Buffer.from(media.data, 'base64'))
-
-                const stickerPath = path.join(__dirname, 'temp_sticker.webp')
-
-                exec(`ffmpeg -y -i "${imagePath}" -vcodec libwebp -vf "scale=512:512:force_original_aspect_ratio=decrease, pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0, format=rgba" -loop 0 -an -q:v 75 "${stickerPath}"`, async (error, stdout, stderr) => {
-                    if (error) {
-                        console.error(`❌ Error en FFmpeg: ${stderr}`)
-                        return message.reply("❌ Hubo un problema al convertir la imagen.")
-                    }
-
-                    const sticker = MessageMedia.fromFilePath(stickerPath)
-                    await message.reply(sticker, undefined, { sendMediaAsSticker: true })
-                    console.log('✅ Sticker enviado exitosamente')
-                    fs.unlinkSync(imagePath)
-                    fs.unlinkSync(stickerPath)
-                })
-
-            } catch (err) {
-                console.error("❌ Error al manejar el archivo de imagen:", err)
-                if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath)
-                if (fs.existsSync(stickerPath)) fs.unlinkSync(stickerPath)
-            }
-        } else {
-            console.log('⚠️ El archivo recibido no es un video MP4 ni una imagen con la palabra "sticker".')
-        }
+  const started = Date.now()
+  try {
+    const input = Buffer.from(media.data, 'base64')
+    let webp
+    if (isVideo(mime)) {
+      if (options.removeBg) await message.reply('Quitar el fondo solo funciona con imágenes; hago el sticker normal.')
+      webp = await videoToSticker(input, options)
+    } else if (isImage(mime)) {
+      if (options.removeBg) await message.reply('Quitando el fondo con IA...')
+      webp = await imageToSticker(input, options)
+    } else {
+      return message.reply('Ese tipo de archivo no se puede convertir en sticker.')
     }
+
+    const sticker = new MessageMedia('image/webp', webp.toString('base64'), 'sticker.webp')
+    await message.reply(sticker, undefined, { sendMediaAsSticker: true, ...STICKER_META })
+    console.log(`Sticker enviado (${mime}, ${(webp.length / 1024).toFixed(0)} KB, ${Date.now() - started} ms)`)
+  } catch (err) {
+    console.error('Error al crear el sticker:', err)
+    await message.reply('Hubo un problema al crear el sticker. Prueba con otro archivo.')
+  }
 })
 
 client.initialize()

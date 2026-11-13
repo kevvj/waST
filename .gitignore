@@ -33,3 +33,7 @@ bower_components/
 # Heroku
 /.apt/
 .vercel
+
+# Sesión y caché de WhatsApp Web
+.wwebjs_auth/
+.wwebjs_cache/
